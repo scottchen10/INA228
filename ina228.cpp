@@ -11,7 +11,10 @@
 //  Read the datasheet for the details
 
 
-#include "INA228.h"
+#include "ina228.h"
+#include "stm32f4xx_hal_def.h"
+#include "stm32f4xx_hal_i2c.h"
+#include <cmath>
 
 //      REGISTERS                   ADDRESS    BITS  RW
 #define INA228_CONFIG               0x00    //  16   RW
@@ -57,19 +60,19 @@
 //
 //  CONSTRUCTOR
 //
-INA228::INA228(const uint8_t address, TwoWire *wire)
+Ina228::Ina228(const uint8_t address, I2C_HandleTypeDef *i2c_handle)
 {
   _address     = address;
-  _wire        = wire;
+  _i2c_handle  = i2c_handle;
   //  no calibrated values by default.
   _shunt       = 0.015;
   _maxCurrent  = 10.0;
-  _current_LSB = _maxCurrent * pow(2, -19);
+  _current_LSB = _maxCurrent * std::pow(2, -19);
   _error       = 0;
 }
 
 
-bool INA228::begin()
+bool Ina228::begin()
 {
   if (! isConnected()) return false;
 
@@ -78,14 +81,18 @@ bool INA228::begin()
 }
 
 
-bool INA228::isConnected()
+bool Ina228::isConnected()
 {
-  _wire->beginTransmission(_address);
-  return ( _wire->endTransmission() == 0);
+  return HAL_I2C_IsDeviceReady(
+      _i2c_handle, 
+      _address << 1,
+      1, 
+      100
+    ) == HAL_OK; 
 }
 
 
-uint8_t INA228::getAddress()
+uint8_t Ina228::getAddress()
 {
   return _address;
 }
@@ -96,7 +103,7 @@ uint8_t INA228::getAddress()
 //  CORE FUNCTIONS
 //
 //  PAGE 25
-float INA228::getBusVoltage()
+float Ina228::getBusVoltage()
 {
   //  always positive, remove reserved bits.
   int32_t value = _readRegister(INA228_BUS_VOLTAGE, 3) >> 4;
@@ -106,7 +113,7 @@ float INA228::getBusVoltage()
 }
 
 //  PAGE 25
-float INA228::getShuntVoltage()
+float Ina228::getShuntVoltage()
 {
   //  shunt_LSB depends on ADCRANGE in INA228_CONFIG register.
   float shunt_LSB = 312.5e-9;  //  312.5 nV
@@ -126,7 +133,7 @@ float INA228::getShuntVoltage()
   return voltage;
 }
 
-int32_t INA228::getShuntVoltageRAW()
+int32_t Ina228::getShuntVoltageRAW()
 {
   //  remove reserved bits.
   uint32_t value = _readRegister(INA228_SHUNT_VOLTAGE, 3) >> 4;
@@ -139,7 +146,7 @@ int32_t INA228::getShuntVoltageRAW()
 }
 
 //  PAGE 25 + 8.1.2
-float INA228::getCurrent()
+float Ina228::getCurrent()
 {
   //  remove reserved bits.
   int32_t value = _readRegister(INA228_CURRENT, 3) >> 4;
@@ -153,7 +160,7 @@ float INA228::getCurrent()
 }
 
 //  PAGE 26 + 8.1.2
-float INA228::getPower()
+float Ina228::getPower()
 {
   uint32_t value = _readRegister(INA228_POWER, 3);
   //  PAGE 31 (8.1.2)
@@ -161,7 +168,7 @@ float INA228::getPower()
 }
 
 //  PAGE 25
-float INA228::getTemperature()
+float Ina228::getTemperature()
 {
   uint32_t value = _readRegister(INA228_TEMPERATURE, 2);
   float LSB = 7.8125e-3;  //  milli degree Celsius
@@ -169,7 +176,7 @@ float INA228::getTemperature()
 }
 
 //  PAGE 26 + 8.1.2
-double INA228::getEnergy()
+double Ina228::getEnergy()
 {
   //  read 40 bit UNSIGNED as a double to prevent 64 bit integers
   //  double might be 8 or 4 byte, depends on platform
@@ -181,7 +188,7 @@ double INA228::getEnergy()
 
 
 //  PAGE 26 + 8.1.2
-double INA228::getCharge()
+double Ina228::getCharge()
 {
   //  read 40 bit SIGNED as a float to prevent 64 bit integers
   //  double might be 8 or 4 byte, depends on platform
@@ -196,14 +203,14 @@ double INA228::getCharge()
 //
 //  CONFIG REGISTER 0
 //
-void INA228::reset()
+void Ina228::reset()
 {
   uint16_t value = _readRegister(INA228_CONFIG, 2);
   value |= INA228_CFG_RST;
   _writeRegister(INA228_CONFIG, value);
 }
 
-bool INA228::setAccumulation(uint8_t value)
+bool Ina228::setAccumulation(uint8_t value)
 {
   if (value > 1) return false;
   uint16_t reg = _readRegister(INA228_CONFIG, 2);
@@ -213,13 +220,13 @@ bool INA228::setAccumulation(uint8_t value)
   return true;
 }
 
-bool INA228::getAccumulation()
+bool Ina228::getAccumulation()
 {
   uint16_t value = _readRegister(INA228_CONFIG, 2);
   return (value & INA228_CFG_RSTACC) > 0;
 }
 
-void INA228::setConversionDelay(uint8_t steps)
+void Ina228::setConversionDelay(uint8_t steps)
 {
   uint16_t value = _readRegister(INA228_CONFIG, 2);
   value &= ~INA228_CFG_CONVDLY;
@@ -227,13 +234,13 @@ void INA228::setConversionDelay(uint8_t steps)
   _writeRegister(INA228_CONFIG, value);
 }
 
-uint8_t INA228::getConversionDelay()
+uint8_t Ina228::getConversionDelay()
 {
   uint16_t value = _readRegister(INA228_CONFIG, 2);
   return (value >> 6) & 0xFF;
 }
 
-void INA228::setTemperatureCompensation(bool on)
+void Ina228::setTemperatureCompensation(bool on)
 {
   uint16_t value = _readRegister(INA228_CONFIG, 2);
   if (on) value |= INA228_CFG_TEMPCOMP;
@@ -241,13 +248,13 @@ void INA228::setTemperatureCompensation(bool on)
   _writeRegister(INA228_CONFIG, value);
 }
 
-bool INA228::getTemperatureCompensation()
+bool Ina228::getTemperatureCompensation()
 {
   uint16_t value = _readRegister(INA228_CONFIG, 2);
   return (value & INA228_CFG_TEMPCOMP) > 0;
 }
 
-bool INA228::setADCRange(bool flag)
+bool Ina228::setADCRange(bool flag)
 {
   uint16_t value = _readRegister(INA228_CONFIG, 2);
   _ADCRange = (value & INA228_CFG_ADCRANGE) > 0;
@@ -263,7 +270,7 @@ bool INA228::setADCRange(bool flag)
   return rv;
 }
 
-bool INA228::getADCRange()
+bool Ina228::getADCRange()
 {
   uint16_t value = _readRegister(INA228_CONFIG, 2);
   _ADCRange = (value & INA228_CFG_ADCRANGE) > 0;
@@ -275,7 +282,7 @@ bool INA228::getADCRange()
 //
 //  CONFIG ADC REGISTER 1
 //
-bool INA228::setMode(uint8_t mode)
+bool Ina228::setMode(uint8_t mode)
 {
   if (mode > 0x0F) return false;
   uint16_t value = _readRegister(INA228_ADC_CONFIG, 2);
@@ -285,13 +292,13 @@ bool INA228::setMode(uint8_t mode)
   return true;
 }
 
-uint8_t INA228::getMode()
+uint8_t Ina228::getMode()
 {
   uint16_t value = _readRegister(INA228_ADC_CONFIG, 2);
   return (value & INA228_ADC_MODE) >> 12;
 }
 
-bool INA228::setBusVoltageConversionTime(uint8_t bvct)
+bool Ina228::setBusVoltageConversionTime(uint8_t bvct)
 {
   if (bvct > 7) return false;
   uint16_t value = _readRegister(INA228_ADC_CONFIG, 2);
@@ -301,13 +308,13 @@ bool INA228::setBusVoltageConversionTime(uint8_t bvct)
   return true;
 }
 
-uint8_t INA228::getBusVoltageConversionTime()
+uint8_t Ina228::getBusVoltageConversionTime()
 {
   uint16_t value = _readRegister(INA228_ADC_CONFIG, 2);
   return (value & INA228_ADC_VBUSCT) >> 9;
 }
 
-bool INA228::setShuntVoltageConversionTime(uint8_t svct)
+bool Ina228::setShuntVoltageConversionTime(uint8_t svct)
 {
   if (svct > 7) return false;
   uint16_t value = _readRegister(INA228_ADC_CONFIG, 2);
@@ -317,13 +324,13 @@ bool INA228::setShuntVoltageConversionTime(uint8_t svct)
   return true;
 }
 
-uint8_t INA228::getShuntVoltageConversionTime()
+uint8_t Ina228::getShuntVoltageConversionTime()
 {
   uint16_t value = _readRegister(INA228_ADC_CONFIG, 2);
   return (value & INA228_ADC_VSHCT) >> 6;
 }
 
-bool INA228::setTemperatureConversionTime(uint8_t tct)
+bool Ina228::setTemperatureConversionTime(uint8_t tct)
 {
   if (tct > 7) return false;
   uint16_t value = _readRegister(INA228_ADC_CONFIG, 2);
@@ -333,13 +340,13 @@ bool INA228::setTemperatureConversionTime(uint8_t tct)
   return true;
 }
 
-uint8_t INA228::getTemperatureConversionTime()
+uint8_t Ina228::getTemperatureConversionTime()
 {
   uint16_t value = _readRegister(INA228_ADC_CONFIG, 2);
   return (value & INA228_ADC_VTCT) >> 3;
 }
 
-bool INA228::setAverage(uint8_t avg)
+bool Ina228::setAverage(uint8_t avg)
 {
   if (avg > 7) return false;
   uint16_t value = _readRegister(INA228_ADC_CONFIG, 2);
@@ -349,7 +356,7 @@ bool INA228::setAverage(uint8_t avg)
   return true;
 }
 
-uint8_t INA228::getAverage()
+uint8_t Ina228::getAverage()
 {
   uint16_t value = _readRegister(INA228_ADC_CONFIG, 2);
   return (value & INA228_ADC_AVG);
@@ -360,7 +367,7 @@ uint8_t INA228::getAverage()
 //
 //  SHUNT CALIBRATION REGISTER 2
 //
-int INA228::setMaxCurrentShunt(float maxCurrent, float shunt)
+int Ina228::setMaxCurrentShunt(float maxCurrent, float shunt)
 {
   //  Shunt can be really small
   if (shunt < 0.0001) return -2;    //  TODO error code
@@ -382,17 +389,17 @@ int INA228::setMaxCurrentShunt(float maxCurrent, float shunt)
   return 0;
 }
 
-float INA228::getMaxCurrent()
+float Ina228::getMaxCurrent()
 {
   return _maxCurrent;
 }
 
-float INA228::getShunt()
+float Ina228::getShunt()
 {
   return _shunt;
 }
 
-float INA228::getCurrentLSB()
+float Ina228::getCurrentLSB()
 {
   return _current_LSB;
 }
@@ -402,14 +409,14 @@ float INA228::getCurrentLSB()
 //
 //  SHUNT TEMPERATURE COEFFICIENT REGISTER 3
 //
-bool INA228::setShuntTemperatureCoefficent(uint16_t ppm)
+bool Ina228::setShuntTemperatureCoefficent(uint16_t ppm)
 {
   if (ppm > 16383) return false;
   _writeRegister(INA228_SHUNT_TEMP_CO, ppm);
   return true;
 }
 
-uint16_t INA228::getShuntTemperatureCoefficent()
+uint16_t Ina228::getShuntTemperatureCoefficent()
 {
   uint16_t value = _readRegister(INA228_SHUNT_TEMP_CO, 2);
   return value;
@@ -420,18 +427,18 @@ uint16_t INA228::getShuntTemperatureCoefficent()
 //
 //  DIAGNOSE ALERT REGISTER 11
 //
-void INA228::setDiagnoseAlert(uint16_t flags)
+void Ina228::setDiagnoseAlert(uint16_t flags)
 {
   _writeRegister(INA228_DIAG_ALERT, flags);
 }
 
-uint16_t INA228::getDiagnoseAlert()
+uint16_t Ina228::getDiagnoseAlert()
 {
   return _readRegister(INA228_DIAG_ALERT, 2);
 }
 
 //  INA228.h has an enum for the bit fields.
-void INA228::setDiagnoseAlertBit(uint8_t bit)
+void Ina228::setDiagnoseAlertBit(uint8_t bit)
 {
   uint16_t value = _readRegister(INA228_DIAG_ALERT, 2);
   uint16_t mask = (1 << bit);
@@ -443,7 +450,7 @@ void INA228::setDiagnoseAlertBit(uint8_t bit)
   }
 }
 
-void INA228::clearDiagnoseAlertBit(uint8_t bit)
+void Ina228::clearDiagnoseAlertBit(uint8_t bit)
 {
   uint16_t value = _readRegister(INA228_DIAG_ALERT, 2);
   uint16_t mask = (1 << bit);
@@ -455,7 +462,7 @@ void INA228::clearDiagnoseAlertBit(uint8_t bit)
   }
 }
 
-uint16_t INA228::getDiagnoseAlertBit(uint8_t bit)
+uint16_t Ina228::getDiagnoseAlertBit(uint8_t bit)
 {
   uint16_t value = _readRegister(INA228_DIAG_ALERT, 2);
   return (value >> bit) & 0x01;
@@ -470,7 +477,7 @@ uint16_t INA228::getDiagnoseAlertBit(uint8_t bit)
 //  - API ?
 //  - return bool for setters
 //  - float voltage interface instead of uint16_t?  breaking!
-void INA228::setShuntOvervoltageTH(uint16_t threshold)
+void Ina228::setShuntOvervoltageTH(uint16_t threshold)
 {
   //  TODO ADCRANGE DEPENDENT
   //  Conversion Factor: 5 μV/LSB when ADCRANGE = 0
@@ -480,7 +487,7 @@ void INA228::setShuntOvervoltageTH(uint16_t threshold)
   _writeRegister(INA228_SOVL, threshold);
 }
 
-uint16_t INA228::getShuntOvervoltageTH()
+uint16_t Ina228::getShuntOvervoltageTH()
 {
   //  TODO ADCRANGE DEPENDENT
   //  float LSB = 5.0e-6;
@@ -488,7 +495,7 @@ uint16_t INA228::getShuntOvervoltageTH()
   return _readRegister(INA228_SOVL, 2);
 }
 
-void INA228::setShuntUndervoltageTH(uint16_t threshold)
+void Ina228::setShuntUndervoltageTH(uint16_t threshold)
 {
   //  TODO ADCRANGE DEPENDENT
   //  float LSB = 5.0e-6;
@@ -496,7 +503,7 @@ void INA228::setShuntUndervoltageTH(uint16_t threshold)
   _writeRegister(INA228_SUVL, threshold);
 }
 
-uint16_t INA228::getShuntUndervoltageTH()
+uint16_t Ina228::getShuntUndervoltageTH()
 {
   //  TODO ADCRANGE DEPENDENT
   //  float LSB = 5.0e-6;
@@ -504,52 +511,52 @@ uint16_t INA228::getShuntUndervoltageTH()
   return _readRegister(INA228_SUVL, 2);
 }
 
-void INA228::setBusOvervoltageTH(uint16_t threshold)
+void Ina228::setBusOvervoltageTH(uint16_t threshold)
 {
   if (threshold > 0x7FFF) return;  //  false;
   //float LSB = 3.125e-3;  //  3.125 mV/LSB.
   _writeRegister(INA228_BOVL, threshold);
 }
 
-uint16_t INA228::getBusOvervoltageTH()
+uint16_t Ina228::getBusOvervoltageTH()
 {
   //float LSB = 3.125e-3;  //  3.125 mV/LSB.
   return _readRegister(INA228_BOVL, 2);
 }
 
-void INA228::setBusUndervoltageTH(uint16_t threshold)
+void Ina228::setBusUndervoltageTH(uint16_t threshold)
 {
   if (threshold > 0x7FFF) return;
   //float LSB = 3.125e-3;  //  3.125 mV/LSB.
   _writeRegister(INA228_BUVL, threshold);
 }
 
-uint16_t INA228::getBusUndervoltageTH()
+uint16_t Ina228::getBusUndervoltageTH()
 {
   //float LSB = 3.125e-3;  //  3.125 mV/LSB.
   return _readRegister(INA228_BUVL, 2);
 }
 
-void INA228::setTemperatureOverLimitTH(uint16_t threshold)
+void Ina228::setTemperatureOverLimitTH(uint16_t threshold)
 {
   //float LSB = 7.8125e-3;  //  milli degrees Celsius
   _writeRegister(INA228_TEMP_LIMIT, threshold);
 }
 
-uint16_t INA228::getTemperatureOverLimitTH()
+uint16_t Ina228::getTemperatureOverLimitTH()
 {
   //float LSB = 7.8125e-3;  //  milli degrees Celsius
   return _readRegister(INA228_TEMP_LIMIT, 2);
 }
 
-void INA228::setPowerOverLimitTH(uint16_t threshold)
+void Ina228::setPowerOverLimitTH(uint16_t threshold)
 {
   //  P29
   //  Conversion factor: 256 × Power LSB.
   _writeRegister(INA228_POWER_LIMIT, threshold);
 }
 
-uint16_t INA228::getPowerOverLimitTH()
+uint16_t Ina228::getPowerOverLimitTH()
 {
   //  P29
   //  Conversion factor: 256 × Power LSB.
@@ -561,19 +568,19 @@ uint16_t INA228::getPowerOverLimitTH()
 //
 //  MANUFACTURER and ID REGISTER 3E/3F
 //
-uint16_t INA228::getManufacturer()
+uint16_t Ina228::getManufacturer()
 {
   uint16_t value = _readRegister(INA228_MANUFACTURER, 2);
   return value;
 }
 
-uint16_t INA228::getDieID()
+uint16_t Ina228::getDieID()
 {
   uint16_t value = _readRegister(INA228_DEVICE_ID, 2);
   return (value >> 4) & 0x0FFF;
 }
 
-uint16_t INA228::getRevision()
+uint16_t Ina228::getRevision()
 {
   uint16_t value = _readRegister(INA228_DEVICE_ID, 2);
   return value & 0x000F;
@@ -584,7 +591,7 @@ uint16_t INA228::getRevision()
 //
 //  ERROR HANDLING
 //
-int INA228::getLastError()
+int Ina228::getLastError()
 {
   int e = _error;
   _error = 0;
@@ -596,89 +603,107 @@ int INA228::getLastError()
 //
 //  PRIVATE
 //
-uint32_t INA228::_readRegister(uint8_t reg, uint8_t bytes)
+uint32_t Ina228::_readRegister(uint8_t reg, uint8_t bytes)
 {
-  _error = 0;
-  _wire->beginTransmission(_address);
-  _wire->write(reg);
-  int n = _wire->endTransmission();
-  if (n != 0)
-  {
-    _error = -1;
-    return 0;
-  }
+    _error = 0;
 
-  uint32_t value = 0;
-  if (bytes == _wire->requestFrom(_address, (uint8_t)bytes))
-  {
+    uint8_t buffer[4] = {0};  // max expected
+    HAL_StatusTypeDef status;
+
+    status = HAL_I2C_Mem_Read(
+        _i2c_handle,
+        _address << 1,
+        reg,
+        I2C_MEMADD_SIZE_8BIT,
+        buffer,
+        bytes,
+        100
+    );
+
+    if (status != HAL_OK)
+    {
+        _error = -1;
+        return 0;
+    }
+
+    uint32_t value = 0;
     for (int i = 0; i < bytes; i++)
     {
-      value <<= 8;
-      value |= _wire->read();
+        value <<= 8;
+        value |= buffer[i];
     }
-  }
-  else
-  {
-    _error = -2;
-    return 0;
-  }
-  return value;
-}
 
+    return value;
+}
 
 //  always 5 bytes
-double INA228::_readRegisterF(uint8_t reg, char mode)
+double Ina228::_readRegisterF(uint8_t reg, char mode)
 {
-  _error = 0;
-  _wire->beginTransmission(_address);
-  _wire->write(reg);
-  int n = _wire->endTransmission();
-  if (n != 0)
-  {
-    _error = -1;
-    return 0;
-  }
+    _error = 0;
 
-  double value = 0;
-  if (5 == _wire->requestFrom(_address, (uint8_t)5))
-  {
+    uint8_t buffer[5] = {0};
+    HAL_StatusTypeDef status;
+
+    status = HAL_I2C_Mem_Read(
+        _i2c_handle,
+        _address << 1,
+        reg,
+        I2C_MEMADD_SIZE_8BIT,
+        buffer,
+        5,
+        100
+    );
+
+    if (status != HAL_OK)
+    {
+        _error = -1;
+        return 0;
+    }
+
     uint32_t val = 0;
-    //  fetch 4 MSB bytes first.
+
     for (int i = 0; i < 4; i++)
     {
-      val <<= 8;
-      val |= _wire->read();
+        val <<= 8;
+        val |= buffer[i];
     }
-    //  handle signed / unsigned by casting.
-    if (mode == 'U') value = val;
-    else             value = (int32_t) val;
-    //  process last byte
-    value *= 256;
-    //  note: mar05c
-    uint8_t n = _wire->read();
-    value += n;
-  }
-  else
-  {
-    _error = -2;
-    return 0;
-  }
-  return value;
+
+    double value;
+    if (mode == 'U') value = (double)val;
+    else             value = (double)((int32_t)val);
+
+    value *= 256.0;
+    value += buffer[4];
+
+    return value;
 }
 
 
-uint16_t INA228::_writeRegister(uint8_t reg, uint16_t value)
+uint16_t Ina228::_writeRegister(uint8_t reg, uint16_t value)
 {
-  _wire->beginTransmission(_address);
-  _wire->write(reg);
-  _wire->write(value >> 8);
-  _wire->write(value & 0xFF);
-  int n = _wire->endTransmission();
-  if (n != 0)
-  {
-    _error = -1;
-  }
-  return n;
+    uint8_t buffer[2];
+    buffer[0] = (value >> 8) & 0xFF;
+    buffer[1] = value & 0xFF;
+
+    HAL_StatusTypeDef status;
+
+    status = HAL_I2C_Mem_Write(
+        _i2c_handle,
+        _address << 1,
+        reg,
+        I2C_MEMADD_SIZE_8BIT,
+        buffer,
+        2,
+        100
+    );
+
+    if (status != HAL_OK)
+    {
+        _error = -1;
+        return 1;  // non-zero = error (Arduino-compatible behavior)
+    }
+
+    return 0;
 }
 
 

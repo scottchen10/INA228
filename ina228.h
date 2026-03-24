@@ -11,9 +11,9 @@
 //
 //  Read the datasheet for the details
 
-
-#include "Arduino.h"
-#include "Wire.h"
+#include <stdint.h>
+#include "stm32f4xx.h"
+#include "board_config.hpp"
 
 
 #define INA228_LIB_VERSION          (F("0.4.1"))
@@ -89,11 +89,11 @@ enum ina228_diag_enum {
 };
 
 
-class INA228
+class Ina228
 {
 public:
   //  address between 0x40 and 0x4F
-  explicit INA228(const uint8_t address, TwoWire *wire = &Wire);
+  explicit Ina228(const uint8_t address, I2C_HandleTypeDef *i2c_handle = BoardConfig::PowerSensorHandle);
 
   bool     begin();
   bool     isConnected();
@@ -265,7 +265,7 @@ private:
   bool     _ADCRange;
 
   uint8_t   _address;
-  TwoWire * _wire;
+  I2C_HandleTypeDef  * _i2c_handle;
 
   int       _error;
 };
