@@ -18,6 +18,8 @@
 
 #define INA228_LIB_VERSION          (F("0.4.1"))
 
+namespace PowerSensor 
+{
 
 //  for setMode() and getMode()
 enum ina228_mode_enum {
@@ -93,7 +95,7 @@ class Ina228
 {
 public:
   //  address between 0x40 and 0x4F
-  explicit Ina228(const uint8_t address, I2C_HandleTypeDef *i2c_handle = BoardConfig::PowerSensorHandle);
+  explicit Ina228(const uint8_t address = 0x40, I2C_HandleTypeDef *i2c_handle = BoardConfig::PowerSensorHandle);
 
   bool     begin();
   bool     isConnected();
@@ -270,7 +272,7 @@ private:
   int       _error;
 };
 
-
+} // namespace PowerSensor
 //  -- END OF FILE --
 
 

@@ -11,7 +11,7 @@
 //  Read the datasheet for the details
 
 
-#include "ina228.h"
+#include "ina228_driver.h"
 #include "stm32f4xx_hal_def.h"
 #include "stm32f4xx_hal_i2c.h"
 #include <cmath>
@@ -55,7 +55,8 @@
 #define INA228_ADC_VTCT             0x0038
 #define INA228_ADC_AVG              0x0007
 
-
+namespace PowerSensor
+{
 ////////////////////////////////////////////////////////
 //
 //  CONSTRUCTOR
@@ -706,6 +707,5 @@ uint16_t Ina228::_writeRegister(uint8_t reg, uint16_t value)
     return 0;
 }
 
-
+} // namespace PowerSensor
 //  -- END OF FILE --
-
