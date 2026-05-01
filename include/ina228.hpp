@@ -7,7 +7,7 @@
 namespace Devices 
 {
 
-class Ina228 : DeviceInterface
+class Ina228 : public DeviceInterface
 {
 public:
     Ina228();

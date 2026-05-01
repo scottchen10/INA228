@@ -18,6 +18,8 @@ DeviceStatus Ina228::readPowerMeasurements(SensorData::PowerSample& sample)
 {
     sample.bus_voltage_V = device_.getBusVolt();
     sample.current_A = device_.getCurrent();
+
+    return DeviceStatus::OKAY;
 }
 
 } // namespace Devices
