@@ -11,7 +11,9 @@ Ina228::Ina228()
 
 DeviceStatus Ina228::initializeDevice()
 {
-    return this->device_.begin() == false ? DeviceStatus::FAILED : DeviceStatus::OKAY;
+    bool succeeded = this->device_.begin();
+    this->device_.setMaxCurrentShunt(10.0f, 0.010);
+    return succeeded == false ? DeviceStatus::FAILED : DeviceStatus::OKAY;
 }
 
 DeviceStatus Ina228::readPowerMeasurements(SensorData::PowerSample& sample)
